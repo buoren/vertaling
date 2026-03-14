@@ -67,9 +67,8 @@ Translators handle the actual translation. Vertaling ships with:
 | Translator | Extra | Description |
 |---|---|---|
 | `EchoTranslator` | — | Returns source text unchanged (testing) |
+| `PseudoTranslator` | — | Replaces all text with `"xx"` for visual QA |
 | `GoogleTranslator` | `[google]` | Google Cloud Translation API v3 |
-| `LibreTranslator` | `[libretranslate]` | Self-hosted LibreTranslate |
-| `HumanReviewTranslator` | — | Queues units for human review |
 
 ```python
 from vertaling.translators.google import GoogleTranslator
