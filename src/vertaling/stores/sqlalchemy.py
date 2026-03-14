@@ -22,7 +22,7 @@ def _default_table(metadata: Any) -> Table:
         raise TypeError(msg)
 
     return Table(
-        "translations",
+        "vertaling_translations",
         metadata,
         Column("code", String(256), primary_key=True),
         Column("locale", String(16), primary_key=True),
