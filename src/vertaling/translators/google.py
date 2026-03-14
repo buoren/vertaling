@@ -1,4 +1,4 @@
-"""GoogleTranslateBackend — translates via Google Cloud Translation.
+"""GoogleTranslator — translates via Google Cloud Translation.
 
 Requires: pip install "vertaling[google]"
 """
@@ -8,8 +8,8 @@ from __future__ import annotations
 from vertaling._core.models import TranslationUnit
 
 
-class GoogleTranslateBackend:
-    """Translation backend using Google Cloud Translation API v3.
+class GoogleTranslator:
+    """Translator using Google Cloud Translation API v3.
 
     Args:
         project_id: GCP project ID.

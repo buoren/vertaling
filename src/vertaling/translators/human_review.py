@@ -1,11 +1,11 @@
-"""HumanReviewBackend — marks units for human review instead of auto-translating."""
+"""HumanReviewTranslator — marks units for human review instead of auto-translating."""
 
 from __future__ import annotations
 
 from vertaling._core.models import TranslationUnit
 
 
-class HumanReviewBackend:
+class HumanReviewTranslator:
     """Marks units as IN_PROGRESS and writes them to a review queue.
 
     Does not perform any machine translation. Use this for content that

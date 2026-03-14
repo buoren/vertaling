@@ -1,33 +1,44 @@
 """
-vertaling: A unified translation pipeline for FastAPI applications.
+vertaling: A decoupled translation pipeline with translate-on-miss.
 
-Handles both static .po file strings and user-generated database content
-through the same batch API abstraction.
+The app owns its database; vertaling only knows about the TranslationStore
+protocol. When a lookup misses, vertaling automatically translates via the
+translator and saves the result.
 
 Usage::
 
-    from vertaling import TranslationPipeline, TranslationConfig
-    from vertaling.backends import DeepLBackend
+    from vertaling import TranslationPipeline, TranslationConfig, TranslationStore
+    from vertaling.translators import EchoTranslator
 
     pipeline = TranslationPipeline(
-        backend=DeepLBackend(api_key="..."),
-        target_locales=["nl", "de", "fr"],
-        source_locale="en",
+        backend=EchoTranslator(),
+        config=TranslationConfig(source_locale="en"),
+        store=my_store,
     )
+
+    text = await pipeline.get("app.title", "Welcome", target_locale="nl")
 """
 
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
-from vertaling._core.origins import ModelFieldOrigin, StaticOrigin
 from vertaling.pipeline import TranslationPipeline
+from vertaling.stores.base import TranslationStore
+from vertaling.translators.base import Translator
+from vertaling.utilities.completeness import CompletenessReport, check_completeness
+from vertaling.utilities.interpolation import interpolate
+from vertaling.utilities.locale import resolve_locale
 
 __all__ = [
+    "CompletenessReport",
     "TranslationConfig",
     "TranslationPipeline",
     "TranslationStatus",
+    "TranslationStore",
     "TranslationUnit",
-    "ModelFieldOrigin",
-    "StaticOrigin",
+    "Translator",
+    "check_completeness",
+    "interpolate",
+    "resolve_locale",
 ]
 
 __version__ = "0.1.0"

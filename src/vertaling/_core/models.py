@@ -4,10 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from vertaling._core.origins import ModelFieldOrigin, StaticOrigin
 
 
 class TranslationStatus(Enum):
@@ -25,33 +21,26 @@ class TranslationStatus(Enum):
 class TranslationUnit:
     """The fundamental unit of work in the translation pipeline.
 
-    Represents a single string to be translated, regardless of whether it
-    originates from a .po file or a SQLAlchemy model field.
+    Natural key is ``code`` + ``target_locale``.
     """
-
-    id: str
-    """Stable identifier used for deduplication across runs."""
 
     code: str
     """A unique code for the translation unit, e.g. 'app.home.title'."""
 
     source_locale: str
-    """BCP-47 locale code of the source text, e.g. 'en-US'."""
+    """BCP-47 locale code of the source text, e.g. 'en'."""
 
     target_locale: str
-    """BCP-47 locale code of the desired translation, e.g. 'nl-NL'."""
+    """BCP-47 locale code of the desired translation, e.g. 'nl'."""
 
     source_text: str
     """The string to be translated."""
 
-    origin: StaticOrigin | ModelFieldOrigin
-    """Where this unit came from — determines how the result is written back."""
-
     context: str | None = None
-    """Optional hint for the translator, e.g. 'button label' or 'workshop title'."""
+    """Optional hint for the translator, e.g. 'button label'."""
 
     translated_text: str | None = None
-    """The translated string; populated by the pipeline after translation."""
+    """The translated string; populated after translation."""
 
     status: TranslationStatus = field(default=TranslationStatus.PENDING)
     """Current lifecycle state."""

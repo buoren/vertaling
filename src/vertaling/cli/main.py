@@ -5,10 +5,8 @@ Requires: pip install "vertaling[cli]"
 Usage::
 
     vertaling translate --locales nl,de,fr
-    vertaling translate --source po --locales nl
-    vertaling translate --source models --tenant-id 42 --locales nl,de
     vertaling stats
-    vertaling translate --dry-run
+    vertaling retry-failed
 """
 
 from __future__ import annotations
@@ -28,20 +26,21 @@ app = typer.Typer(
 @app.command()
 def translate(
     locales: str = typer.Option(..., help="Comma-separated target locales, e.g. nl,de,fr"),
-    source: str | None = typer.Option(None, help="Restrict to 'po' or 'models'. Default: both."),
-    tenant_id: str | None = typer.Option(None, help="Restrict model translation to this tenant."),
-    dry_run: bool = typer.Option(
-        False, help="Show what would be translated without calling the backend."
-    ),
 ) -> None:
-    """Translate pending units — static .po strings, model fields, or both."""
-    ...
+    """Translate pending units for the given locales."""
+    typer.echo(f"Would translate pending units for locales: {locales}")
+
+
+@app.command()
+def retry_failed() -> None:
+    """Retry all failed translations."""
+    typer.echo("Would retry all failed translations.")
 
 
 @app.command()
 def stats() -> None:
-    """Show translation coverage statistics."""
-    ...
+    """Show translation statistics."""
+    typer.echo("Would show translation statistics.")
 
 
 if __name__ == "__main__":

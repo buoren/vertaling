@@ -1,4 +1,4 @@
-"""TranslationBackend Protocol — the interface all backends must implement."""
+"""Translator Protocol — the interface all translators must implement."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from vertaling._core.models import TranslationUnit
 
 
 @runtime_checkable
-class TranslationBackend(Protocol):
-    """Protocol that all translation backends must satisfy.
+class Translator(Protocol):
+    """Protocol that all translators must satisfy.
 
-    Backends are responsible for taking a list of TranslationUnits with
-    source_text populated and returning them with translated_text populated.
+    Translators take a list of TranslationUnits with source_text populated
+    and return them with translated_text populated.
     """
 
     async def translate_batch(
@@ -27,11 +27,11 @@ class TranslationBackend(Protocol):
         ...
 
     def max_batch_chars(self) -> int:
-        """Maximum total characters this backend accepts in a single batch call."""
+        """Maximum total characters this translator accepts in a single batch call."""
         ...
 
     def supported_locales(self) -> set[str]:
-        """BCP-47 locale codes this backend can translate into.
+        """BCP-47 locale codes this translator can translate into.
 
         Return an empty set to signal 'unknown / accepts anything'.
         """

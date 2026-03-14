@@ -1,4 +1,4 @@
-"""LibreTranslateBackend — translates via a self-hosted LibreTranslate instance.
+"""LibreTranslator — translates via a self-hosted LibreTranslate instance.
 
 Requires: pip install "vertaling[libretranslate]"
 """
@@ -8,8 +8,8 @@ from __future__ import annotations
 from vertaling._core.models import TranslationUnit
 
 
-class LibreTranslateBackend:
-    """Translation backend using a LibreTranslate HTTP API.
+class LibreTranslator:
+    """Translator using a LibreTranslate HTTP API.
 
     Args:
         base_url: Base URL of the LibreTranslate instance, e.g.

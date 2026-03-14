@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "vertaling"
 version = "0.1.0"
-description = "A unified translation pipeline for FastAPI applications — static .po files and user-generated content through one abstraction."
+description = "A decoupled translation pipeline with translate-on-miss."
 authors = ["Kevin Buoren Shiue <kevin@vaguely.nl>"]
 license = "MIT"
 readme = "README.md"
-keywords = ["i18n", "translation", "fastapi", "sqlalchemy", "babel", "deepl"]
+keywords = ["i18n", "translation", "fastapi", "deepl"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,8 +23,6 @@ packages = [{ include = "vertaling", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-sqlalchemy = "^2.0"
-babel = "^2.14"
 pydantic = "^2.0"
 pydantic-settings = "^2.0"
 
@@ -35,6 +33,8 @@ deepl = { version = "^1.17", optional = true }
 google-cloud-translate = { version = "^3.15", optional = true }
 httpx = { version = "^0.27", optional = true }
 typer = { version = "^0.12", optional = true }
+babel = { version = "^2.14", optional = true }
+sqlalchemy = { version = "^2.0", optional = true }
 
 [tool.poetry.extras]
 fastapi = ["fastapi", "starlette"]
@@ -42,7 +42,9 @@ deepl = ["deepl"]
 google = ["google-cloud-translate"]
 libretranslate = ["httpx"]
 cli = ["typer"]
-all = ["fastapi", "starlette", "deepl", "google-cloud-translate", "httpx", "typer"]
+po = ["babel"]
+sqlalchemy = ["sqlalchemy"]
+all = ["fastapi", "starlette", "deepl", "google-cloud-translate", "httpx", "typer", "babel", "sqlalchemy"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
@@ -90,7 +92,7 @@ select = [
 ignore = [
     "ANN101",  # self annotation not required
     "ANN102",  # cls annotation not required
-    "ANN401",  # Any allowed where necessary (SQLAlchemy interop)
+    "ANN401",  # Any allowed where necessary
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -116,16 +118,12 @@ module = "vertaling._core.*"
 strict = true
 
 [[tool.mypy.overrides]]
-module = [
-    "vertaling.collectors.*",
-    "vertaling.writers.*",
-    "vertaling.store.*",
-]
+module = "vertaling.stores.*"
 disallow_untyped_defs = true
 warn_return_any = false
 
 [[tool.mypy.overrides]]
-module = "vertaling.fastapi.*"
+module = "vertaling.integrations.fastapi.*"
 warn_return_any = false
 
 [[tool.mypy.overrides]]
@@ -147,7 +145,12 @@ addopts = "--cov=vertaling --cov-report=term-missing --cov-fail-under=80"
 [tool.coverage.run]
 source = ["vertaling"]
 branch = true
-omit = ["src/vertaling/cli/*"]
+omit = [
+    "src/vertaling/cli/*",
+    "src/vertaling/translators/google.py",
+    "src/vertaling/translators/libretranslate.py",
+    "src/vertaling/integrations/fastapi/middleware.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -157,4 +160,6 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
     "raise NotImplementedError",
+    "raise RuntimeError",
+    "raise ImportError",
 ]
