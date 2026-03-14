@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "vertaling"
-version = "0.1.0"
+version = "1.0.0"
 description = "A decoupled translation pipeline with translate-on-miss."
 authors = ["Kevin Buoren Shiue <kevin@vaguely.nl>"]
 license = "MIT"
 readme = "README.md"
-keywords = ["i18n", "translation", "fastapi", "deepl"]
+keywords = ["i18n", "translation", "fastapi", "sqlalchemy"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -30,22 +30,14 @@ pydantic-settings = "^2.0"
 # Optional extra dependencies
 fastapi = { version = "^0.110", optional = true }
 starlette = { version = "^0.36", optional = true }
-deepl = { version = "^1.17", optional = true }
 google-cloud-translate = { version = "^3.15", optional = true }
-httpx = { version = "^0.27", optional = true }
-typer = { version = "^0.12", optional = true }
-babel = { version = "^2.14", optional = true }
 sqlalchemy = { version = "^2.0", optional = true }
 
 [tool.poetry.extras]
 fastapi = ["fastapi", "starlette"]
-deepl = ["deepl"]
 google = ["google-cloud-translate"]
-libretranslate = ["httpx"]
-cli = ["typer"]
-po = ["babel"]
 sqlalchemy = ["sqlalchemy"]
-all = ["fastapi", "starlette", "deepl", "google-cloud-translate", "httpx", "typer", "babel", "sqlalchemy"]
+all = ["fastapi", "starlette", "google-cloud-translate", "sqlalchemy"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
@@ -57,13 +49,8 @@ responses = "^0.25"
 vcrpy = "^6.0"
 fastapi = "^0.110"
 starlette = "^0.36"
-deepl = "^1.17"
 google-cloud-translate = "^3.15"
 httpx = "^0.27"
-typer = "^0.12"
-
-[tool.poetry.scripts]
-vertaling = "vertaling.cli.main:app"
 
 [build-system]
 requires = ["poetry-core"]
@@ -129,7 +116,6 @@ warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = [
-    "babel.*",
     "vcrpy.*",
 ]
 ignore_missing_imports = true
@@ -147,8 +133,6 @@ addopts = "--cov=vertaling --cov-report=term-missing --cov-fail-under=80"
 source = ["vertaling"]
 branch = true
 omit = [
-    "src/vertaling/cli/*",
-    "src/vertaling/translators/libretranslate.py",
     "src/vertaling/integrations/fastapi/middleware.py",
 ]
 

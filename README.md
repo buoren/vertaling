@@ -9,7 +9,6 @@ pip install vertaling                        # core
 pip install "vertaling[fastapi]"             # FastAPI integration
 pip install "vertaling[google]"              # Google Cloud Translate
 pip install "vertaling[sqlalchemy]"          # SQLAlchemy store
-pip install "vertaling[cli]"                 # CLI tools
 pip install "vertaling[all]"                 # everything
 ```
 

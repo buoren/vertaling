@@ -17,13 +17,13 @@ class TranslationConfig(BaseSettings):
     target_locales: list[str] = Field(default_factory=list)
 
     backend: str = "echo"
-    """Backend identifier: 'deepl', 'google', 'libretranslate', 'echo'."""
+    """Backend identifier: 'echo', 'pseudo', 'google'."""
 
     backend_api_key: str | None = None
     """API key for the selected backend."""
 
     backend_url: str | None = None
-    """Base URL override — used for LibreTranslate self-hosted deployments."""
+    """Base URL override for self-hosted translation services."""
 
     fallback_to_source: bool = True
     """Return source text when a translation is missing rather than raising."""
