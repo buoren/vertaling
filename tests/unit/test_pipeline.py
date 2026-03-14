@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
 from vertaling.pipeline import TranslationPipeline
 from vertaling.stores.memory import InMemoryTranslationStore
+from vertaling.translators.echo import EchoTranslator
 
 
 @pytest.mark.asyncio
@@ -198,3 +200,197 @@ def test_chunk_respects_limit():
     assert len(batches[0]) == 2
     assert len(batches[1]) == 2
     assert len(batches[2]) == 1
+
+
+# --- Multi-store tests ---
+
+
+@pytest.mark.asyncio
+async def test_get_checks_preferred_store_first(pipeline_with_readonly_and_writable_stores):
+    """Lookup hits the preferred store before trying others."""
+    pipe, readonly, writable, _review = pipeline_with_readonly_and_writable_stores
+    unit = TranslationUnit(
+        code="app.title",
+        source_locale="en",
+        target_locale="nl",
+        source_text="Hello",
+        translated_text="Hallo-json",
+        status=TranslationStatus.COMPLETE,
+    )
+    readonly.save(unit)
+
+    result = await pipe.get("app.title", "Hello", target_locale="nl", store="json")
+    assert result == "Hallo-json"
+
+
+@pytest.mark.asyncio
+async def test_get_falls_back_to_next_store_on_miss(pipeline_with_readonly_and_writable_stores):
+    """When the preferred store misses, other stores are tried in order."""
+    pipe, readonly, writable, _review = pipeline_with_readonly_and_writable_stores
+    unit = TranslationUnit(
+        code="app.title",
+        source_locale="en",
+        target_locale="nl",
+        source_text="Hello",
+        translated_text="Hallo-sql",
+        status=TranslationStatus.COMPLETE,
+    )
+    writable.save(unit)
+
+    result = await pipe.get("app.title", "Hello", target_locale="nl", store="json")
+    assert result == "Hallo-sql"
+
+
+@pytest.mark.asyncio
+async def test_miss_on_readonly_store_saves_to_review(pipeline_with_readonly_and_writable_stores):
+    """New translations targeting a read-only store go to the review store instead."""
+    pipe, readonly, writable, review = pipeline_with_readonly_and_writable_stores
+
+    result = await pipe.get("app.new", "Welcome", target_locale="nl", store="json")
+    assert result == "Welcome"  # EchoTranslator returns source
+
+    assert readonly.get("app.new", "en", "nl") is None
+    assert review.get("app.new", "en", "nl") == "Welcome"
+
+
+@pytest.mark.asyncio
+async def test_miss_on_writable_store_saves_there(pipeline_with_readonly_and_writable_stores):
+    """New translations targeting a writable store are saved directly to it."""
+    pipe, readonly, writable, review = pipeline_with_readonly_and_writable_stores
+
+    result = await pipe.get("app.new", "Welcome", target_locale="nl", store="sql")
+    assert result == "Welcome"
+    assert writable.get("app.new", "en", "nl") == "Welcome"
+    assert review.get("app.new", "en", "nl") is None
+
+
+@pytest.mark.asyncio
+async def test_source_locale_override_uses_cached_translation(
+    pipeline_with_readonly_and_writable_stores,
+):
+    """Per-call source_locale finds translations keyed by that locale."""
+    pipe, readonly, writable, _review = pipeline_with_readonly_and_writable_stores
+
+    unit = TranslationUnit(
+        code="app.dutch_thing",
+        source_locale="nl",
+        target_locale="de",
+        source_text="Welkom",
+        translated_text="Willkommen",
+        status=TranslationStatus.COMPLETE,
+    )
+    writable.save(unit)
+
+    result = await pipe.get(
+        "app.dutch_thing",
+        "Welkom",
+        target_locale="de",
+        source_locale="nl",
+        store="sql",
+    )
+    assert result == "Willkommen"
+
+
+@pytest.mark.asyncio
+async def test_source_locale_override_translates_with_correct_locale(
+    pipeline_with_readonly_and_writable_stores,
+):
+    """On miss, source_locale override is passed through to the translator."""
+    pipe, _readonly, writable, _review = pipeline_with_readonly_and_writable_stores
+
+    result = await pipe.get(
+        "app.dutch_thing",
+        "Welkom",
+        target_locale="de",
+        source_locale="nl",
+        store="sql",
+    )
+    assert result == "Welkom"
+    assert writable.get("app.dutch_thing", "nl", "de") == "Welkom"
+
+
+def test_single_store_param_still_works():
+    """Backward compat: passing store= wraps it as the default store."""
+    store = InMemoryTranslationStore()
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    pipe = TranslationPipeline(backend=EchoTranslator(), config=config, store=store)
+    assert pipe.store is store
+
+
+def test_passing_both_store_and_stores_raises():
+    """Ambiguous config: store= and stores= together is rejected."""
+    store = InMemoryTranslationStore()
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    with pytest.raises(ValueError, match="Cannot pass both"):
+        TranslationPipeline(
+            backend=EchoTranslator(),
+            config=config,
+            store=store,
+            stores={"a": store},
+        )
+
+
+def test_omitting_all_stores_raises():
+    """Pipeline requires at least one store."""
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    with pytest.raises(ValueError, match="Must pass either"):
+        TranslationPipeline(backend=EchoTranslator(), config=config)
+
+
+@pytest.mark.asyncio
+async def test_batch_run_translates_pending_from_all_stores(
+    pipeline_with_readonly_and_writable_stores,
+):
+    """run() aggregates pending from every store and routes saves correctly."""
+    pipe, readonly, writable, review = pipeline_with_readonly_and_writable_stores
+
+    readonly.save(
+        TranslationUnit(
+            code="k1",
+            source_locale="en",
+            target_locale="nl",
+            source_text="One",
+        )
+    )
+    writable.save(
+        TranslationUnit(
+            code="k2",
+            source_locale="en",
+            target_locale="nl",
+            source_text="Two",
+        )
+    )
+
+    stats = await pipe.run(target_locales=["nl"])
+    assert stats.total_units == 2
+    assert stats.complete == 2
+
+    # read-only origin → new translation saved to review store
+    assert review.get("k1", "en", "nl") == "One"
+
+    # writable origin → saved in place
+    assert writable.get("k2", "en", "nl") == "Two"
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_retranslates_across_all_stores(
+    pipeline_with_readonly_and_writable_stores,
+):
+    """retry_failed() picks up failed units from every store."""
+    pipe, readonly, writable, review = pipeline_with_readonly_and_writable_stores
+
+    writable.save(
+        TranslationUnit(
+            code="k1",
+            source_locale="en",
+            target_locale="nl",
+            source_text="Retry",
+            status=TranslationStatus.FAILED,
+            error="err",
+        )
+    )
+
+    stats = await pipe.retry_failed()
+    assert stats.total_units == 1
+    assert stats.complete == 1
+    assert writable.get("k1", "en", "nl") == "Retry"

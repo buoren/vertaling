@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
 from vertaling.stores.base import TranslationStore
+from vertaling.stores.composite import CompositeStore
 from vertaling.translators.base import Translator
 
 logger = logging.getLogger(__name__)
@@ -29,44 +30,66 @@ class PipelineStats:
 class TranslationPipeline:
     """Orchestrates translation with a translate-on-miss pattern.
 
-    On ``get()``, looks up the translation in the store. If missing,
+    On ``get()``, looks up the translation in the store(s). If missing,
     translates via the backend and saves the result before returning.
 
-    For batch operations, ``run()`` pulls pending units from the store,
+    For batch operations, ``run()`` pulls pending units from the store(s),
     translates them, and saves the results.
+
+    Supports multiple named stores with fallback, read-only stores, and
+    a review store for read-only misses.
 
     Args:
         backend: The translator to use.
         config: Pipeline configuration.
-        store: Translation store (app-provided, implements TranslationStore protocol).
+        store: Single translation store (backward-compatible).
+        stores: Dict of named stores for multi-store routing.
+        read_only: Names of stores that should not be written to.
+        review_store: Where translations go when the target store is read-only.
 
     Example::
-
-        from vertaling import TranslationPipeline, TranslationConfig
-        from vertaling.translators import EchoTranslator
 
         pipeline = TranslationPipeline(
             backend=EchoTranslator(),
             config=TranslationConfig(source_locale="en"),
-            store=my_store,
+            stores={"json": json_store, "sql": sql_store},
+            read_only=["json"],
+            review_store=review_store,
         )
 
-        # Translate-on-miss
-        text = await pipeline.get("app.title", "Welcome", target_locale="nl")
-
-        # Batch run
-        stats = await pipeline.run(target_locales=["nl", "de"])
+        text = await pipeline.get("app.title", "Welcome", target_locale="nl", store="json")
     """
 
     def __init__(
         self,
         backend: Translator,
         config: TranslationConfig,
-        store: TranslationStore,
+        store: TranslationStore | None = None,
+        stores: dict[str, TranslationStore] | None = None,
+        read_only: list[str] | None = None,
+        review_store: TranslationStore | None = None,
     ) -> None:
+        if store is not None and stores is not None:
+            msg = "Cannot pass both 'store' and 'stores'"
+            raise ValueError(msg)
+        if store is None and stores is None:
+            msg = "Must pass either 'store' or 'stores'"
+            raise ValueError(msg)
+
         self.backend = backend
         self.config = config
-        self.store = store
+
+        if store is not None:
+            stores = {"default": store}
+
+        self._composite = CompositeStore(
+            stores=stores,  # type: ignore[arg-type]
+            read_only=set(read_only) if read_only else None,
+            review_store=review_store,
+        )
+
+        # Keep a reference for backward compat (tests use pipeline.store)
+        self.store = store if store is not None else next(iter(stores.values()))  # type: ignore[union-attr]
 
     async def get(
         self,
@@ -74,6 +97,8 @@ class TranslationPipeline:
         source_text: str,
         target_locale: str,
         context: str | None = None,
+        store: str | None = None,
+        source_locale: str | None = None,
     ) -> str:
         """Look up a translation, translating on miss.
 
@@ -82,18 +107,24 @@ class TranslationPipeline:
             source_text: The source text to translate if not cached.
             target_locale: Target locale code.
             context: Optional context hint for the translator.
+            store: Preferred store to look up first.
+            source_locale: Override config source_locale for this call.
 
         Returns:
             The translated text, or source_text if fallback is enabled and
             translation fails.
         """
-        cached = self.store.get(code, self.config.source_locale, target_locale)
+        effective_source = source_locale or self.config.source_locale
+
+        cached, _found_in = self._composite.get(
+            code, effective_source, target_locale, preferred_store=store
+        )
         if cached is not None:
             return cached
 
         unit = TranslationUnit(
             code=code,
-            source_locale=self.config.source_locale,
+            source_locale=effective_source,
             target_locale=target_locale,
             source_text=source_text,
             context=context,
@@ -103,7 +134,7 @@ class TranslationPipeline:
         translated = results[0]
 
         if translated.status == TranslationStatus.COMPLETE and translated.translated_text:
-            self.store.save(translated)
+            self._composite.save(translated, store_name=store)
             return translated.translated_text
 
         translated.status = (
@@ -111,7 +142,7 @@ class TranslationPipeline:
             if translated.status == TranslationStatus.FAILED
             else TranslationStatus.FAILED
         )
-        self.store.save(translated)
+        self._composite.save(translated, store_name=store)
 
         if self.config.fallback_to_source:
             return source_text
@@ -122,6 +153,7 @@ class TranslationPipeline:
     async def translate_batch(
         self,
         units: list[TranslationUnit],
+        store: str | None = None,
     ) -> list[TranslationUnit]:
         """Translate a list of units directly via the backend.
 
@@ -132,14 +164,14 @@ class TranslationPipeline:
 
         results = await self.backend.translate_batch(units)
         for unit in results:
-            self.store.save(unit)
+            self._composite.save(unit, store_name=store or unit.store)
         return results
 
     async def run(
         self,
         target_locales: list[str] | None = None,
     ) -> PipelineStats:
-        """Run the batch pipeline: pull pending from store, translate, save.
+        """Run the batch pipeline: pull pending from all stores, translate, save.
 
         Args:
             target_locales: Override config target_locales for this run.
@@ -148,7 +180,7 @@ class TranslationPipeline:
             PipelineStats with counts for this run.
         """
         locales = target_locales or self.config.target_locales
-        pending = self.store.get_pending(locales)
+        pending = self._composite.get_pending(locales)
 
         stats = PipelineStats(total_units=len(pending))
 
@@ -162,7 +194,7 @@ class TranslationPipeline:
         for batch in batches:
             results = await self.backend.translate_batch(batch)
             for unit in results:
-                self.store.save(unit)
+                self._composite.save(unit, store_name=unit.store)
                 if unit.status == TranslationStatus.COMPLETE:
                     stats.complete += 1
                     stats.chars_translated += len(unit.source_text)
@@ -177,7 +209,7 @@ class TranslationPipeline:
 
     async def retry_failed(self) -> PipelineStats:
         """Retry all failed translations."""
-        failed = self.store.get_failed()
+        failed = self._composite.get_failed()
         for unit in failed:
             unit.status = TranslationStatus.PENDING
             unit.error = None

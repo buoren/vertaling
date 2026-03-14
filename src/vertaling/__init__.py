@@ -26,7 +26,7 @@ from vertaling.stores.base import TranslationStore
 from vertaling.translators.base import Translator
 from vertaling.utilities.completeness import CompletenessReport, check_completeness
 from vertaling.utilities.interpolation import interpolate
-from vertaling.utilities.locale import resolve_locale
+from vertaling.utilities.locale import normalize_for_api, resolve_locale
 
 __all__ = [
     "CompletenessReport",
@@ -38,6 +38,7 @@ __all__ = [
     "Translator",
     "check_completeness",
     "interpolate",
+    "normalize_for_api",
     "resolve_locale",
 ]
 

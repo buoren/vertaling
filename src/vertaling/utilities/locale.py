@@ -1,4 +1,4 @@
-"""Locale fallback chain resolution."""
+"""Locale utilities — fallback resolution and API code normalization."""
 
 from __future__ import annotations
 
@@ -46,3 +46,45 @@ def resolve_locale(
             return locale
 
     return default
+
+
+# Locales where the region carries distinct meaning and must be preserved.
+# Keys and values are stored lowercase for case-insensitive matching.
+_REGION_SIGNIFICANT: dict[str, set[str]] = {
+    "zh": {"cn", "tw", "hk"},  # Simplified / Traditional / HK Traditional
+    "pt": {"br", "pt"},  # Brazilian / European Portuguese
+    "sr": {"latn", "cyrl"},  # Serbian Latin / Cyrillic
+}
+
+
+def normalize_for_api(locale: str) -> str:
+    """Convert a BCP-47 locale code to a translation API language code.
+
+    For most locales the region is stripped (``en-US`` → ``en``).
+    For languages where the region carries distinct meaning (Chinese,
+    Portuguese, Serbian), the full tag is kept and lowercased.
+
+    Args:
+        locale: A BCP-47 locale code, e.g. ``"en-US"`` or ``"zh-TW"``.
+
+    Returns:
+        A normalised language code suitable for Google Cloud Translate.
+
+    Examples::
+
+        normalize_for_api("en-US")   # → "en"
+        normalize_for_api("zh-TW")   # → "zh-tw"
+        normalize_for_api("pt-BR")   # → "pt-br"
+        normalize_for_api("de")      # → "de"
+    """
+    parts = locale.split("-", 1)
+    language = parts[0].lower()
+
+    if len(parts) == 1:
+        return language
+
+    region = parts[1].lower()
+    if language in _REGION_SIGNIFICANT and region in _REGION_SIGNIFICANT[language]:
+        return f"{language}-{region}"
+
+    return language

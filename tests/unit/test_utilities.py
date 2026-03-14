@@ -6,7 +6,7 @@ from vertaling._core.models import TranslationStatus, TranslationUnit
 from vertaling.stores.memory import InMemoryTranslationStore
 from vertaling.utilities.completeness import CompletenessReport, check_completeness
 from vertaling.utilities.interpolation import interpolate
-from vertaling.utilities.locale import resolve_locale
+from vertaling.utilities.locale import normalize_for_api, resolve_locale
 
 # --- interpolation ---
 
@@ -53,6 +53,44 @@ def test_resolve_locale_default_fallback():
 
 def test_resolve_locale_custom_default():
     assert resolve_locale("fr-FR", ["en", "de"], default="de") == "de"
+
+
+# --- normalize_for_api ---
+
+
+def test_normalize_strips_region_for_common_locales():
+    assert normalize_for_api("en-US") == "en"
+    assert normalize_for_api("nl-NL") == "nl"
+    assert normalize_for_api("de-DE") == "de"
+    assert normalize_for_api("fr-FR") == "fr"
+
+
+def test_normalize_preserves_chinese_variants():
+    assert normalize_for_api("zh-CN") == "zh-cn"
+    assert normalize_for_api("zh-TW") == "zh-tw"
+    assert normalize_for_api("zh-HK") == "zh-hk"
+
+
+def test_normalize_preserves_portuguese_variants():
+    assert normalize_for_api("pt-BR") == "pt-br"
+    assert normalize_for_api("pt-PT") == "pt-pt"
+
+
+def test_normalize_preserves_serbian_variants():
+    assert normalize_for_api("sr-Latn") == "sr-latn"
+    assert normalize_for_api("sr-Cyrl") == "sr-cyrl"
+
+
+def test_normalize_bare_code_passes_through():
+    assert normalize_for_api("de") == "de"
+    assert normalize_for_api("en") == "en"
+    assert normalize_for_api("zh") == "zh"
+
+
+def test_normalize_case_insensitive():
+    assert normalize_for_api("zh-cn") == "zh-cn"  # lowercase input still matches
+    assert normalize_for_api("EN-US") == "en"
+    assert normalize_for_api("ZH-TW") == "zh-tw"
 
 
 # --- completeness ---

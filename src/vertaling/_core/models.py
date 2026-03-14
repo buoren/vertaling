@@ -47,3 +47,6 @@ class TranslationUnit:
 
     error: str | None = None
     """Error message if status is FAILED."""
+
+    store: str | None = None
+    """Name of the store this unit belongs to (set by pipeline, not by user)."""

@@ -40,3 +40,27 @@ def pipeline(
         config=default_config,
         store=memory_store,
     )
+
+
+@pytest.fixture
+def pipeline_with_readonly_and_writable_stores(
+    echo_backend: EchoTranslator,
+    default_config: TranslationConfig,
+) -> tuple[
+    TranslationPipeline,
+    InMemoryTranslationStore,
+    InMemoryTranslationStore,
+    InMemoryTranslationStore,
+]:
+    """Pipeline with a read-only store, a writable store, and a review store."""
+    readonly_store = InMemoryTranslationStore()
+    writable_store = InMemoryTranslationStore()
+    review_store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=echo_backend,
+        config=default_config,
+        stores={"json": readonly_store, "sql": writable_store},
+        read_only=["json"],
+        review_store=review_store,
+    )
+    return pipe, readonly_store, writable_store, review_store
