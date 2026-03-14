@@ -263,6 +263,114 @@ for r in reports:
 # de: 33% — missing: ['app.greeting', 'app.logout']
 ```
 
+## Content translation
+
+Vertaling includes tools for translating database content — ORM fields, JSON columns with nested structures, and automatic endpoint translation.
+
+### Translation codes
+
+Translation codes identify a specific translatable value. Use `make_translation_code()` to build them:
+
+```python
+from vertaling import make_translation_code
+
+# Plain column: "events.name.evt-001"
+make_translation_code("events", "name", "evt-001")
+
+# JSON sub-path: "events.settings.evt-001;maps.0.name"
+make_translation_code("events", "settings", "evt-001", json_path="maps.0.name")
+```
+
+### JSON path utilities
+
+Navigate and mutate nested dict/list structures:
+
+```python
+from vertaling.utilities import get_at_path, set_at_path, resolve_wildcard_paths
+
+data = {"maps": [{"name": "Hall A"}, {"name": "Hall B"}]}
+
+get_at_path(data, "maps.0.name")           # → "Hall A"
+set_at_path(data, "maps.0.name", "Main")   # mutates in-place
+
+# Expand wildcards into concrete paths
+resolve_wildcard_paths(data, "maps.*.name")
+# → [("maps.0.name", "Main"), ("maps.1.name", "Hall B")]
+```
+
+### TranslatableMixin (SQLAlchemy)
+
+```bash
+pip install "vertaling[sqlalchemy]"
+```
+
+Add translation-aware methods to your ORM models:
+
+```python
+from vertaling.integrations.sqlalchemy import TranslatableMixin
+
+class Event(Base, TranslatableMixin):
+    __tablename__ = "events"
+
+    translatable_fields = [
+        "name",                          # plain column
+        "description",                   # plain column
+        ("settings", "maps.*.name"),     # JSON column with wildcard path
+    ]
+
+    id = Column(String, primary_key=True)
+    name = Column(String)
+    description = Column(String)
+    settings = Column(JSON)
+```
+
+Then look up translations via a `TranslationStore`:
+
+```python
+# Single field
+event.get_translated("name", "nl", store)  # → "Zomerfest" or source value
+
+# JSON sub-path
+event.get_translated_json_field("settings", "maps.0.name", "nl", store)
+
+# All translatable fields at once (deep-copies JSON before mutation)
+translated = event.to_dict_translated("nl", store)
+# → {"name": "Zomerfest", "description": "...", "settings": {"maps": [{"name": "Hoofdzaal"}, ...]}}
+```
+
+### ContentScanner
+
+Discover missing translations across your database content:
+
+```python
+from vertaling import ContentScanner, ScanTarget
+
+scanner = ContentScanner(store=my_store, target_locales=["nl", "de"])
+
+result = scanner.scan([
+    ScanTarget(
+        table="events",
+        fields=["name", "description", ("settings", "maps.*.name")],
+        records=db.query(Event).all(),  # or list of dicts
+    ),
+])
+
+print(f"Checked {result.total_checked}, missing {len(result.missing)}")
+
+# Feed missing translations directly into the pipeline
+await pipeline.translate_batch(result.missing)
+```
+
+Detect orphaned translations (referencing deleted records):
+
+```python
+from vertaling.utilities import find_orphans
+
+valid_ids = {e.id for e in db.query(Event.id).all()}
+orphans = find_orphans(store, "events", valid_ids)
+# → ["events.name.deleted-evt", "events.settings.old-evt;maps.0.name"]
+```
+
 ## FastAPI integration
 
 ```bash
@@ -309,6 +417,41 @@ app.include_router(router, prefix="/translations")
 # GET  /translations?locale=nl&prefix=app   → all keys for locale, filtered by prefix
 # POST /translations/bulk?locale=nl          → fetch specific keys (JSON body: ["app.title", "footer"])
 ```
+
+### Content translation decorators
+
+Automatically translate content on write endpoints and apply translations on read endpoints:
+
+```python
+from vertaling.integrations.fastapi import (
+    register_translatable_fields,
+    translate_on_write,
+    translate_on_read,
+    get_pipeline,
+    get_locale,
+)
+
+# Register which fields are translatable for each model
+register_translatable_fields("events", ["name", "description"])
+
+# After the endpoint returns, translates the response fields via the pipeline.
+# Uses BackgroundTasks if available in kwargs.
+@app.post("/events")
+@translate_on_write("events")
+async def create_event(data: EventCreate, pipeline=Depends(get_pipeline)):
+    event = save_event(data)
+    return {"id": event.id, "name": event.name, "description": event.description}
+
+# Before returning, replaces field values with translations from the store.
+# No-op when locale matches source_locale.
+@app.get("/events/{id}")
+@translate_on_read("events")
+async def get_event(id: str, pipeline=Depends(get_pipeline), locale=Depends(get_locale)):
+    event = load_event(id)
+    return {"id": event.id, "name": event.name, "description": event.description}
+```
+
+Both decorators expect `pipeline` in kwargs (via `Depends(get_pipeline)`). `translate_on_read` also expects `locale` (via `Depends(get_locale)`). You can pass `fields=["name"]` to either decorator to override the registry.
 
 ### Background translation
 
