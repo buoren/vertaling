@@ -1,11 +1,12 @@
-[tool.poetry]
+[project]
 name = "vertaling"
 version = "1.1.0"
 description = "A decoupled translation pipeline with translate-on-miss."
-authors = ["Kevin Buoren Shiue <buoren@vaguely.nl>"]
+authors = [{ name = "Kevin Buoren Shiue", email = "buoren@vaguely.nl" }]
 license = "MIT"
 readme = "README.md"
 keywords = ["i18n", "translation", "fastapi", "sqlalchemy"]
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -20,24 +21,24 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pydantic-settings>=2.0,<3.0",
+]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.110,<1.0", "starlette>=0.36,<1.0"]
+google = ["google-cloud-translate>=3.15,<4.0"]
+sqlalchemy = ["sqlalchemy>=2.0,<3.0"]
+all = [
+    "fastapi>=0.110,<1.0",
+    "starlette>=0.36,<1.0",
+    "google-cloud-translate>=3.15,<4.0",
+    "sqlalchemy>=2.0,<3.0",
+]
+
+[tool.poetry]
 packages = [{ include = "vertaling", from = "src" }]
-
-[tool.poetry.dependencies]
-python = "^3.10"
-pydantic = "^2.0"
-pydantic-settings = "^2.0"
-
-# Optional extra dependencies
-fastapi = { version = "^0.110", optional = true }
-starlette = { version = "^0.36", optional = true }
-google-cloud-translate = { version = "^3.15", optional = true }
-sqlalchemy = { version = "^2.0", optional = true }
-
-[tool.poetry.extras]
-fastapi = ["fastapi", "starlette"]
-google = ["google-cloud-translate"]
-sqlalchemy = ["sqlalchemy"]
-all = ["fastapi", "starlette", "google-cloud-translate", "sqlalchemy"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
