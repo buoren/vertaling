@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vertaling.glossary.sqlalchemy import SQLAlchemyGlossary
+from vertaling.glossaries.sqlalchemy import SQLAlchemyGlossary
 
 
 @pytest.fixture
@@ -63,6 +63,44 @@ class TestAddEquivalentSet:
         assert glossary.get_terms("en", "nl") == {"bird": "snoekje", "cat": "kat"}
 
 
+class TestScopedTerms:
+    def test_scoped_add_and_get(self, glossary):
+        glossary.add_term("bird", "snoekje", "en", "nl", scope="acro")
+        assert glossary.get_terms("en", "nl", scopes=["acro"]) == {"bird": "snoekje"}
+
+    def test_scoped_term_not_visible_unscoped(self, glossary):
+        glossary.add_term("bird", "snoekje", "en", "nl", scope="acro")
+        assert glossary.get_terms("en", "nl") == {}
+
+    def test_unscoped_term_not_visible_in_scope(self, glossary):
+        glossary.add_term("bird", "snoekje", "en", "nl")
+        assert glossary.get_terms("en", "nl", scopes=["acro"]) == {}
+
+    def test_multi_scope_merge_override(self, glossary):
+        glossary.add_term("bird", "vogel", "en", "nl", scope="acro")
+        glossary.add_term("bird", "snoekje", "en", "nl", scope="acro.dac.xxxx")
+        glossary.add_term("cat", "kat", "en", "nl", scope="acro")
+        result = glossary.get_terms("en", "nl", scopes=["acro", "acro.dac.xxxx"])
+        assert result == {"bird": "snoekje", "cat": "kat"}
+
+    def test_scope_order_matters(self, glossary):
+        glossary.add_term("bird", "vogel", "en", "nl", scope="a")
+        glossary.add_term("bird", "snoekje", "en", "nl", scope="b")
+        assert glossary.get_terms("en", "nl", scopes=["a", "b"]) == {"bird": "snoekje"}
+        assert glossary.get_terms("en", "nl", scopes=["b", "a"]) == {"bird": "vogel"}
+
+    def test_equivalent_set_with_scope(self, glossary):
+        glossary.add_equivalent_set({"en": "bird", "nl": "snoekje"}, scope="acro")
+        assert glossary.get_terms("en", "nl", scopes=["acro"]) == {"bird": "snoekje"}
+        assert glossary.get_terms("nl", "en", scopes=["acro"]) == {"snoekje": "bird"}
+        assert glossary.get_terms("en", "nl") == {}
+
+    def test_backward_compat_unscoped(self, glossary):
+        glossary.add_term("bird", "snoekje", "en", "nl")
+        glossary.add_equivalent_set({"en": "cat", "nl": "kat"})
+        assert glossary.get_terms("en", "nl") == {"bird": "snoekje", "cat": "kat"}
+
+
 class TestValidation:
     def test_must_provide_table_or_metadata(self):
         with pytest.raises(ValueError, match="Must provide"):
@@ -76,6 +114,7 @@ class TestValidation:
         custom = Table(
             "my_glossary",
             metadata,
+            Column("scope", String(256), primary_key=True, default=""),
             Column("source_locale", String(16), primary_key=True),
             Column("target_locale", String(16), primary_key=True),
             Column("source_term", String(256), primary_key=True),

@@ -1,5 +1,7 @@
 # vertaling
 
+[![GitHub](https://img.shields.io/github/v/release/buoren/vertaling)](https://github.com/buoren/vertaling/)
+
 A decoupled translation pipeline with **translate-on-miss**. Your app owns its database — vertaling only knows about a simple `TranslationStore` protocol. When a lookup misses, vertaling translates via the configured translator and saves the result automatically.  It also supports bolt-on content translation for databases and other CMS storage which may or may not support localization.
 
 ## Installation
@@ -90,7 +92,7 @@ translator = GoogleTranslator(
 Manage glossary terms locally with `InMemoryGlossary` (or implement the `Glossary` protocol for persistent storage):
 
 ```python
-from vertaling.glossary import InMemoryGlossary
+from vertaling.glossaries import InMemoryGlossary
 
 glossary = InMemoryGlossary()
 
@@ -104,10 +106,66 @@ glossary.get_terms("nl", "en")  # → {"snoekje": "bird"}
 For SQL-backed persistence:
 
 ```python
-from vertaling.glossary.sqlalchemy import SQLAlchemyGlossary
+from vertaling.glossaries.sqlalchemy import SQLAlchemyGlossary
 
 glossary = SQLAlchemyGlossary(session_factory=Session, metadata=metadata)
 metadata.create_all(engine)  # creates vertaling_glossary_terms table
+```
+
+#### Scoped glossaries
+
+Glossary terms support scoping — e.g. `"acro"` as a baseline, `"acro.dac.xxxx"` for convention-specific overrides. When retrieving terms, pass an ordered list of scopes; later scopes override earlier ones:
+
+```python
+glossary.add_term("bird", "vogel", "en", "nl", scope="acro")
+glossary.add_term("bird", "snoekje", "en", "nl", scope="acro.dac.xxxx")
+glossary.add_term("cat", "kat", "en", "nl", scope="acro")
+
+# Convention-specific override wins for "bird"
+glossary.get_terms("en", "nl", scopes=["acro", "acro.dac.xxxx"])
+# → {"bird": "snoekje", "cat": "kat"}
+
+# Baseline only
+glossary.get_terms("en", "nl", scopes=["acro"])
+# → {"bird": "vogel", "cat": "kat"}
+
+# No scopes — returns only unscoped terms (backward compatible)
+glossary.get_terms("en", "nl")
+# → {}
+```
+
+`add_equivalent_set` also accepts a `scope`:
+
+```python
+glossary.add_equivalent_set({"en": "bird", "nl": "snoekje"}, scope="acro")
+```
+
+#### Sample SQL migrations
+
+For the translation store (`vertaling_translations`):
+
+```sql
+CREATE TABLE vertaling_translations (
+  code         VARCHAR(512) NOT NULL,
+  locale       VARCHAR(16)  NOT NULL,
+  source_text  TEXT,
+  translated_text TEXT,
+  status       VARCHAR(16)  NOT NULL DEFAULT 'pending',
+  PRIMARY KEY (code, locale)
+);
+```
+
+For the glossary store (`vertaling_glossary_terms`):
+
+```sql
+CREATE TABLE vertaling_glossary_terms (
+  scope         VARCHAR(256) NOT NULL DEFAULT '',
+  source_locale VARCHAR(16)  NOT NULL,
+  target_locale VARCHAR(16)  NOT NULL,
+  source_term   VARCHAR(256) NOT NULL,
+  target_term   VARCHAR(256) NOT NULL,
+  PRIMARY KEY (scope, source_locale, target_locale, source_term)
+);
 ```
 
 > **Note:** Syncing glossary contents to a Google Cloud glossary resource is done via the console or `gcloud` CLI — vertaling does not manage the cloud resource itself.

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-03-15
+
+### Added
+- **Scoped glossaries**: `add_term` and `add_equivalent_set` accept `scope` parameter; `get_terms` accepts `scopes` list for ordered merge with later-wins semantics
+- `scope` column added to default `vertaling_glossary_terms` table schema (part of PK)
+
+### Changed
+- Renamed glossary package from `vertaling.glossary` to `vertaling.glossaries` for consistency with `vertaling.stores`
+
 ## [1.1.0] - 2026-03-15
 
 ### Added

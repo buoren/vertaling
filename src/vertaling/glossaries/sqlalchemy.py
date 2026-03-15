@@ -22,6 +22,7 @@ def _default_glossary_table(metadata: Any) -> Table:
     return Table(
         "vertaling_glossary_terms",
         metadata,
+        Column("scope", String(256), primary_key=True, default=""),
         Column("source_locale", String(16), primary_key=True),
         Column("target_locale", String(16), primary_key=True),
         Column("source_term", String(256), primary_key=True),
@@ -45,7 +46,7 @@ class SQLAlchemyGlossary:
 
         from sqlalchemy import create_engine, MetaData
         from sqlalchemy.orm import sessionmaker
-        from vertaling.glossary.sqlalchemy import SQLAlchemyGlossary
+        from vertaling.glossaries.sqlalchemy import SQLAlchemyGlossary
 
         engine = create_engine("sqlite:///translations.db")
         metadata = MetaData()
@@ -82,14 +83,18 @@ class SQLAlchemyGlossary:
         target_term: str,
         source_locale: str,
         target_locale: str,
+        scope: str | None = None,
     ) -> None:
         """Add a single directional term mapping (upserts)."""
         t = self._table
         from sqlalchemy import select
 
+        scope_val = scope or ""
+
         with self._session_factory() as session:
             existing = session.execute(
                 select(t.c.source_term)
+                .where(t.c.scope == scope_val)
                 .where(t.c.source_locale == source_locale)
                 .where(t.c.target_locale == target_locale)
                 .where(t.c.source_term == source_term)
@@ -98,6 +103,7 @@ class SQLAlchemyGlossary:
             if existing:
                 session.execute(
                     t.update()
+                    .where(t.c.scope == scope_val)
                     .where(t.c.source_locale == source_locale)
                     .where(t.c.target_locale == target_locale)
                     .where(t.c.source_term == source_term)
@@ -106,6 +112,7 @@ class SQLAlchemyGlossary:
             else:
                 session.execute(
                     t.insert().values(
+                        scope=scope_val,
                         source_locale=source_locale,
                         target_locale=target_locale,
                         source_term=source_term,
@@ -114,7 +121,11 @@ class SQLAlchemyGlossary:
                 )
             session.commit()
 
-    def add_equivalent_set(self, terms: dict[str, str]) -> None:
+    def add_equivalent_set(
+        self,
+        terms: dict[str, str],
+        scope: str | None = None,
+    ) -> None:
         """Add an equivalent term set across all language pairs.
 
         Example::
@@ -126,19 +137,57 @@ class SQLAlchemyGlossary:
         from itertools import permutations
 
         for source_locale, target_locale in permutations(terms, 2):
-            self.add_term(terms[source_locale], terms[target_locale], source_locale, target_locale)
+            self.add_term(
+                terms[source_locale],
+                terms[target_locale],
+                source_locale,
+                target_locale,
+                scope=scope,
+            )
 
-    def get_terms(self, source_locale: str, target_locale: str) -> dict[str, str]:
-        """Return {source_term: target_term} for this pair."""
+    def get_terms(
+        self,
+        source_locale: str,
+        target_locale: str,
+        scopes: list[str] | None = None,
+    ) -> dict[str, str]:
+        """Return {source_term: target_term} for this pair.
+
+        When *scopes* is provided, terms are merged in order so that later
+        scopes override earlier ones.  When *scopes* is ``None``, only
+        unscoped terms (scope = '') are returned.
+        """
         t = self._table
         from sqlalchemy import select
 
+        if scopes is None:
+            stmt = (
+                select(t.c.source_term, t.c.target_term)
+                .where(t.c.scope == "")
+                .where(t.c.source_locale == source_locale)
+                .where(t.c.target_locale == target_locale)
+            )
+            with self._session_factory() as session:
+                rows = session.execute(stmt).fetchall()
+                return {row.source_term: row.target_term for row in rows}
+
+        # Fetch all matching scopes in one query
         stmt = (
-            select(t.c.source_term, t.c.target_term)
+            select(t.c.scope, t.c.source_term, t.c.target_term)
+            .where(t.c.scope.in_(scopes))
             .where(t.c.source_locale == source_locale)
             .where(t.c.target_locale == target_locale)
         )
 
         with self._session_factory() as session:
             rows = session.execute(stmt).fetchall()
-            return {row.source_term: row.target_term for row in rows}
+
+        # Group by scope, then merge in the requested order
+        by_scope: dict[str, dict[str, str]] = {}
+        for row in rows:
+            by_scope.setdefault(row.scope, {})[row.source_term] = row.target_term
+
+        merged: dict[str, str] = {}
+        for scope in scopes:
+            merged.update(by_scope.get(scope, {}))
+        return merged

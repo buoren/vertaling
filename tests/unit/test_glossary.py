@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vertaling.glossary.memory import InMemoryGlossary
+from vertaling.glossaries.memory import InMemoryGlossary
 
 
 class TestAddTermAndGetTerms:
@@ -57,3 +57,49 @@ class TestAddEquivalentSet:
         result = g.get_terms("en", "nl")
         result["extra"] = "value"
         assert "extra" not in g.get_terms("en", "nl")
+
+
+class TestScopedTerms:
+    def test_scoped_add_and_get(self):
+        g = InMemoryGlossary()
+        g.add_term("bird", "snoekje", "en", "nl", scope="acro")
+        assert g.get_terms("en", "nl", scopes=["acro"]) == {"bird": "snoekje"}
+
+    def test_scoped_term_not_visible_unscoped(self):
+        g = InMemoryGlossary()
+        g.add_term("bird", "snoekje", "en", "nl", scope="acro")
+        assert g.get_terms("en", "nl") == {}
+
+    def test_unscoped_term_not_visible_in_scope(self):
+        g = InMemoryGlossary()
+        g.add_term("bird", "snoekje", "en", "nl")
+        assert g.get_terms("en", "nl", scopes=["acro"]) == {}
+
+    def test_multi_scope_merge_override(self):
+        g = InMemoryGlossary()
+        g.add_term("bird", "vogel", "en", "nl", scope="acro")
+        g.add_term("bird", "snoekje", "en", "nl", scope="acro.dac.xxxx")
+        g.add_term("cat", "kat", "en", "nl", scope="acro")
+        result = g.get_terms("en", "nl", scopes=["acro", "acro.dac.xxxx"])
+        assert result == {"bird": "snoekje", "cat": "kat"}
+
+    def test_scope_order_matters(self):
+        g = InMemoryGlossary()
+        g.add_term("bird", "vogel", "en", "nl", scope="a")
+        g.add_term("bird", "snoekje", "en", "nl", scope="b")
+        assert g.get_terms("en", "nl", scopes=["a", "b"]) == {"bird": "snoekje"}
+        assert g.get_terms("en", "nl", scopes=["b", "a"]) == {"bird": "vogel"}
+
+    def test_equivalent_set_with_scope(self):
+        g = InMemoryGlossary()
+        g.add_equivalent_set({"en": "bird", "nl": "snoekje"}, scope="acro")
+        assert g.get_terms("en", "nl", scopes=["acro"]) == {"bird": "snoekje"}
+        assert g.get_terms("nl", "en", scopes=["acro"]) == {"snoekje": "bird"}
+        assert g.get_terms("en", "nl") == {}
+
+    def test_backward_compat_unscoped(self):
+        """Existing unscoped usage still works identically."""
+        g = InMemoryGlossary()
+        g.add_term("bird", "snoekje", "en", "nl")
+        g.add_equivalent_set({"en": "cat", "nl": "kat"})
+        assert g.get_terms("en", "nl") == {"bird": "snoekje", "cat": "kat"}

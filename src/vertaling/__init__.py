@@ -21,8 +21,8 @@ Usage::
 
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
-from vertaling.glossary.base import Glossary
-from vertaling.glossary.memory import InMemoryGlossary
+from vertaling.glossaries.base import Glossary
+from vertaling.glossaries.memory import InMemoryGlossary
 from vertaling.pipeline import TranslationPipeline
 from vertaling.stores.base import TranslationStore
 from vertaling.translators.base import Translator
@@ -52,4 +52,4 @@ __all__ = [
     "resolve_locale",
 ]
 
-__version__ = "1.1.0"
+__version__ = "1.2.1"
