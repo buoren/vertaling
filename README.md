@@ -75,6 +75,43 @@ from vertaling.translators.google import GoogleTranslator
 translator = GoogleTranslator(project_id="my-gcp-project")
 ```
 
+#### Glossary support
+
+Google Cloud Translation v3 supports [glossaries](https://cloud.google.com/translate/docs/advanced/glossary) for domain-specific terminology. Pass a `glossary_id` to force specific term translations:
+
+```python
+translator = GoogleTranslator(
+    project_id="my-gcp-project",
+    location="us-central1",  # glossaries require a regional location, not "global"
+    glossary_id="acro-glossary",
+)
+```
+
+Manage glossary terms locally with `InMemoryGlossary` (or implement the `Glossary` protocol for persistent storage):
+
+```python
+from vertaling.glossary import InMemoryGlossary
+
+glossary = InMemoryGlossary()
+
+# Add an equivalent term set — expands into all pair combinations
+glossary.add_equivalent_set({"en": "bird", "nl": "snoekje", "de": "Vogel"})
+
+glossary.get_terms("en", "nl")  # → {"bird": "snoekje"}
+glossary.get_terms("nl", "en")  # → {"snoekje": "bird"}
+```
+
+For SQL-backed persistence:
+
+```python
+from vertaling.glossary.sqlalchemy import SQLAlchemyGlossary
+
+glossary = SQLAlchemyGlossary(session_factory=Session, metadata=metadata)
+metadata.create_all(engine)  # creates vertaling_glossary_terms table
+```
+
+> **Note:** Syncing glossary contents to a Google Cloud glossary resource is done via the console or `gcloud` CLI — vertaling does not manage the cloud resource itself.
+
 Custom translators just need to implement the `Translator` protocol:
 
 ```python

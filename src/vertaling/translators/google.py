@@ -35,12 +35,26 @@ class GoogleTranslator:
         project_id: str,
         location: str = "global",
         credentials: Any | None = None,
+        glossary_id: str | None = None,
     ) -> None:
         self._project_id = project_id
         self._location = location
         self._parent = f"projects/{project_id}/locations/{location}"
         self._credentials = credentials
         self._client: TranslationServiceClient | None = None
+
+        if glossary_id is not None and location == "global":
+            logger.warning(
+                "glossary_id=%r is set but location is 'global'; "
+                "glossaries require a regional location (e.g. 'us-central1')",
+                glossary_id,
+            )
+
+        self._glossary_resource_name: str | None = None
+        if glossary_id is not None:
+            self._glossary_resource_name = (
+                f"projects/{project_id}/locations/{location}/glossaries/{glossary_id}"
+            )
 
     def _get_client(self) -> TranslationServiceClient:
         """Lazy-init the Google Cloud client."""
@@ -81,6 +95,7 @@ class GoogleTranslator:
                     texts,
                     google_target,
                     google_source,
+                    self._glossary_resource_name,
                 )
                 for unit, translated in zip(locale_units, translated_texts, strict=True):
                     unit.translated_text = translated
@@ -98,19 +113,33 @@ class GoogleTranslator:
         texts: list[str],
         target_language_code: str,
         source_language_code: str,
+        glossary_resource_name: str | None = None,
     ) -> list[str]:
         """Synchronous helper — called via ``run_in_executor``."""
         from google.cloud.translate_v3 import TranslateTextRequest
 
         client = self._get_client()
-        request = TranslateTextRequest(
-            parent=self._parent,
-            contents=texts,
-            target_language_code=target_language_code,
-            source_language_code=source_language_code,
-            mime_type="text/plain",
-        )
+
+        request_kwargs: dict[str, Any] = {
+            "parent": self._parent,
+            "contents": texts,
+            "target_language_code": target_language_code,
+            "source_language_code": source_language_code,
+            "mime_type": "text/plain",
+        }
+
+        if glossary_resource_name is not None:
+            from google.cloud.translate_v3 import TranslateTextGlossaryConfig
+
+            request_kwargs["glossary_config"] = TranslateTextGlossaryConfig(
+                glossary=glossary_resource_name,
+            )
+
+        request = TranslateTextRequest(**request_kwargs)
         response = client.translate_text(request=request)
+
+        if glossary_resource_name is not None:
+            return [t.translated_text for t in response.glossary_translations]
         return [t.translated_text for t in response.translations]
 
     def max_batch_chars(self) -> int:

@@ -21,6 +21,8 @@ Usage::
 
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
+from vertaling.glossary.base import Glossary
+from vertaling.glossary.memory import InMemoryGlossary
 from vertaling.pipeline import TranslationPipeline
 from vertaling.stores.base import TranslationStore
 from vertaling.translators.base import Translator
@@ -33,6 +35,8 @@ from vertaling.utilities.scanner import ContentScanner, ScanResult, ScanTarget
 __all__ = [
     "CompletenessReport",
     "ContentScanner",
+    "Glossary",
+    "InMemoryGlossary",
     "ScanResult",
     "ScanTarget",
     "TranslationConfig",

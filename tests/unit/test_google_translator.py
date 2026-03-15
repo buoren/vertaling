@@ -36,7 +36,7 @@ async def test_translates_single_unit(translator):
     assert len(result) == 1
     assert result[0].translated_text == "Hallo"
     assert result[0].status == TranslationStatus.COMPLETE
-    m.assert_called_once_with(["Hello"], "nl", "en")
+    m.assert_called_once_with(["Hello"], "nl", "en", None)
 
 
 @pytest.mark.asyncio
@@ -53,7 +53,7 @@ async def test_translates_multiple_units_same_locale(translator):
 async def test_groups_by_target_locale(translator):
     calls = []
 
-    def fake_api(texts, target, source):
+    def fake_api(texts, target, source, glossary=None):
         calls.append((target, texts))
         return [f"[{target}]{t}" for t in texts]
 
@@ -93,7 +93,7 @@ async def test_normalizes_locale_codes_for_api(translator):
         units = [_unit(source="en-US", target="nl-NL")]
         await translator.translate_batch(units)
 
-    m.assert_called_once_with(["Hello"], "nl", "en")
+    m.assert_called_once_with(["Hello"], "nl", "en", None)
 
 
 @pytest.mark.asyncio
@@ -102,7 +102,7 @@ async def test_preserves_chinese_region_in_api_call(translator):
         units = [_unit(source="en", target="zh-TW")]
         await translator.translate_batch(units)
 
-    m.assert_called_once_with(["Hello"], "zh-tw", "en")
+    m.assert_called_once_with(["Hello"], "zh-tw", "en", None)
 
 
 def test_max_batch_chars():
@@ -113,3 +113,49 @@ def test_max_batch_chars():
 def test_supported_locales_empty():
     t = GoogleTranslator(project_id="test")
     assert t.supported_locales() == set()
+
+
+# --- Glossary support ---
+
+
+@pytest.fixture
+def glossary_translator():
+    t = GoogleTranslator(
+        project_id="test-project",
+        location="us-central1",
+        glossary_id="acro-glossary",
+    )
+    t._client = mock.MagicMock()
+    return t
+
+
+@pytest.mark.asyncio
+async def test_glossary_id_passes_resource_name(glossary_translator):
+    with mock.patch.object(glossary_translator, "_call_google_api", return_value=["Hallo"]) as m:
+        units = [_unit()]
+        await glossary_translator.translate_batch(units)
+
+    m.assert_called_once_with(
+        ["Hello"],
+        "nl",
+        "en",
+        "projects/test-project/locations/us-central1/glossaries/acro-glossary",
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_glossary_passes_none(translator):
+    with mock.patch.object(translator, "_call_google_api", return_value=["Hallo"]) as m:
+        units = [_unit()]
+        await translator.translate_batch(units)
+
+    m.assert_called_once_with(["Hello"], "nl", "en", None)
+
+
+def test_glossary_global_location_warns(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="vertaling.translators.google"):
+        GoogleTranslator(project_id="test", location="global", glossary_id="my-glossary")
+
+    assert "glossaries require a regional location" in caplog.text
