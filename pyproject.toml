@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "vertaling"
-version = "1.0.0"
+version = "1.1.0"
 description = "A decoupled translation pipeline with translate-on-miss."
-authors = ["Kevin Buoren Shiue <kevin@vaguely.nl>"]
+authors = ["Kevin Buoren Shiue <buoren@vaguely.nl>"]
 license = "MIT"
 readme = "README.md"
 keywords = ["i18n", "translation", "fastapi", "sqlalchemy"]
