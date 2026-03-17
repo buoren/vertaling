@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+import re
+
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
+from vertaling.glossaries.base import Glossary
 from vertaling.stores.base import TranslationStore
 from vertaling.stores.composite import CompositeStore
 from vertaling.translators.base import Translator
@@ -68,6 +71,8 @@ class TranslationPipeline:
         stores: dict[str, TranslationStore] | None = None,
         read_only: list[str] | None = None,
         review_store: TranslationStore | None = None,
+        glossary: Glossary | None = None,
+        glossary_scopes: list[str] | None = None,
     ) -> None:
         if store is not None and stores is not None:
             msg = "Cannot pass both 'store' and 'stores'"
@@ -87,6 +92,9 @@ class TranslationPipeline:
             read_only=set(read_only) if read_only else None,
             review_store=review_store,
         )
+
+        self._glossary = glossary
+        self._glossary_scopes = glossary_scopes
 
         # Keep a reference for backward compat (tests use pipeline.store)
         self.store = store if store is not None else next(iter(stores.values()))  # type: ignore[union-attr]
@@ -130,7 +138,9 @@ class TranslationPipeline:
             context=context,
         )
 
+        self._attach_glossary([unit])
         results = await self.backend.translate_batch([unit])
+        self._enforce_glossary(results)
         translated = results[0]
 
         if translated.status == TranslationStatus.COMPLETE and translated.translated_text:
@@ -162,7 +172,9 @@ class TranslationPipeline:
         if not units:
             return []
 
+        self._attach_glossary(units)
         results = await self.backend.translate_batch(units)
+        self._enforce_glossary(results)
         for unit in results:
             self._composite.save(unit, store_name=store or unit.store)
         return results
@@ -187,12 +199,15 @@ class TranslationPipeline:
         if not pending:
             return stats
 
+        self._attach_glossary(pending)
+
         # Chunk into batches respecting translator char limit
         max_chars = self.backend.max_batch_chars()
         batches = self._chunk(pending, max_chars)
 
         for batch in batches:
             results = await self.backend.translate_batch(batch)
+            self._enforce_glossary(results)
             for unit in results:
                 self._composite.save(unit, store_name=unit.store)
                 if unit.status == TranslationStatus.COMPLETE:
@@ -233,6 +248,39 @@ class TranslationPipeline:
             else:
                 stats.pending += 1
         return stats
+
+    def _attach_glossary(self, units: list[TranslationUnit]) -> None:
+        """Populate glossary_terms on each unit from the glossary."""
+        if self._glossary is None:
+            return
+
+        # Cache terms by (source, target) pair to avoid repeated lookups
+        cache: dict[tuple[str, str], dict[str, str]] = {}
+        for unit in units:
+            key = (unit.source_locale, unit.target_locale)
+            if key not in cache:
+                cache[key] = self._glossary.get_terms(
+                    key[0], key[1], scopes=self._glossary_scopes
+                )
+            terms = cache[key]
+            if terms:
+                unit.glossary_terms = terms
+
+    @staticmethod
+    def _enforce_glossary(units: list[TranslationUnit]) -> None:
+        """Post-process translated text to enforce glossary terms."""
+        for unit in units:
+            if (
+                not unit.glossary_terms
+                or unit.status != TranslationStatus.COMPLETE
+                or not unit.translated_text
+            ):
+                continue
+
+            text = unit.translated_text
+            for source_term, target_term in unit.glossary_terms.items():
+                text = re.sub(re.escape(source_term), target_term, text, flags=re.IGNORECASE)
+            unit.translated_text = text
 
     @staticmethod
     def _chunk(units: list[TranslationUnit], max_chars: int) -> list[list[TranslationUnit]]:

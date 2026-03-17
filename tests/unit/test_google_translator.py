@@ -159,3 +159,61 @@ def test_glossary_global_location_warns(caplog):
         GoogleTranslator(project_id="test", location="global", glossary_id="my-glossary")
 
     assert "glossaries require a regional location" in caplog.text
+
+
+# --- Language detection ---
+
+
+@pytest.mark.asyncio
+async def test_detect_language(translator):
+    with mock.patch.object(translator, "_detect_language_sync", return_value="fr") as m:
+        result = await translator.detect_language("Bonjour le monde")
+
+    assert result == "fr"
+    m.assert_called_once_with("Bonjour le monde")
+
+
+@pytest.mark.asyncio
+async def test_detect_language_returns_none_on_error(translator):
+    with mock.patch.object(
+        translator, "_detect_language_sync", side_effect=RuntimeError("API down")
+    ):
+        result = await translator.detect_language("Hello")
+
+    assert result is None
+
+
+def test_detect_language_sync_calls_api(translator):
+    mock_response = mock.MagicMock()
+    mock_lang = mock.MagicMock()
+    mock_lang.language_code = "de"
+    mock_response.languages = [mock_lang]
+
+    translator._client.detect_language.return_value = mock_response
+
+    with mock.patch("vertaling.translators.google.DetectLanguageRequest", create=True) as MockReq:
+        from vertaling.translators.google import GoogleTranslator as _GT
+
+        # Patch the import inside the method
+        with mock.patch.dict(
+            "sys.modules",
+            {"google.cloud.translate_v3": mock.MagicMock(DetectLanguageRequest=MockReq)},
+        ):
+            result = translator._detect_language_sync("Hallo Welt")
+
+    assert result == "de"
+
+
+def test_detect_language_sync_empty_response(translator):
+    mock_response = mock.MagicMock()
+    mock_response.languages = []
+
+    translator._client.detect_language.return_value = mock_response
+
+    with mock.patch.dict(
+        "sys.modules",
+        {"google.cloud.translate_v3": mock.MagicMock(DetectLanguageRequest=mock.MagicMock())},
+    ):
+        result = translator._detect_language_sync("???")
+
+    assert result is None

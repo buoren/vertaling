@@ -142,6 +142,43 @@ class GoogleTranslator:
             return [t.translated_text for t in response.glossary_translations]
         return [t.translated_text for t in response.translations]
 
+    async def detect_language(self, text: str) -> str | None:
+        """Detect the language of the given text.
+
+        This is a Google-specific method, not part of the ``Translator`` protocol.
+
+        Args:
+            text: The text to detect the language of.
+
+        Returns:
+            BCP-47 language code (e.g. ``'en'``, ``'fr'``), or ``None``
+            if detection failed.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(
+                None, self._detect_language_sync, text
+            )
+        except Exception as exc:
+            logger.warning("Language detection failed: %s", exc)
+            return None
+
+    def _detect_language_sync(self, text: str) -> str | None:
+        """Synchronous helper for language detection."""
+        from google.cloud.translate_v3 import DetectLanguageRequest
+
+        client = self._get_client()
+        request = DetectLanguageRequest(
+            parent=self._parent,
+            content=text,
+            mime_type="text/plain",
+        )
+        response = client.detect_language(request=request)
+
+        if response.languages:
+            return response.languages[0].language_code
+        return None
+
     def max_batch_chars(self) -> int:
         """Google Cloud Translate practical limit per request."""
         return 30_000

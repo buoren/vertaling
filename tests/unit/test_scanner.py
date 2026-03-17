@@ -8,7 +8,7 @@ import pytest
 
 from vertaling._core.models import TranslationStatus, TranslationUnit
 from vertaling.stores.memory import InMemoryTranslationStore
-from vertaling.utilities.scanner import ContentScanner, ScanTarget, find_orphans
+from vertaling.utilities.scanner import ContentScanner, ScanTarget, cleanup_orphans, find_orphans
 
 
 @pytest.fixture()
@@ -264,4 +264,84 @@ class TestFindOrphans:
     def test_store_without_keys(self, store: InMemoryTranslationStore) -> None:
         # InMemoryTranslationStore doesn't have keys() — should return []
         result = find_orphans(store, "events", valid_ids={"e1"})
+        assert result == []
+
+
+class TestCleanupOrphans:
+    def test_deletes_orphaned_codes(self) -> None:
+        deleted: list[str] = []
+
+        class DeletableStore:
+            def get(self, code: str, source_locale: str, target_locale: str) -> str | None:
+                return None
+
+            def save(self, unit: Any) -> None:
+                pass
+
+            def get_pending(self, target_locales: list[str]) -> list[Any]:
+                return []
+
+            def get_failed(self) -> list[Any]:
+                return []
+
+            def keys(self) -> list[str]:
+                return [
+                    "events.name.e1",
+                    "events.name.e2",
+                    "events.description.e3",
+                ]
+
+            def delete(self, code: str) -> None:
+                deleted.append(code)
+
+        store = DeletableStore()
+        result = cleanup_orphans(store, "events", valid_ids={"e1"})
+
+        assert sorted(result) == ["events.description.e3", "events.name.e2"]
+        assert sorted(deleted) == ["events.description.e3", "events.name.e2"]
+
+    def test_no_orphans_deletes_nothing(self) -> None:
+        deleted: list[str] = []
+
+        class DeletableStore:
+            def get(self, code: str, source_locale: str, target_locale: str) -> str | None:
+                return None
+
+            def save(self, unit: Any) -> None:
+                pass
+
+            def get_pending(self, target_locales: list[str]) -> list[Any]:
+                return []
+
+            def get_failed(self) -> list[Any]:
+                return []
+
+            def keys(self) -> list[str]:
+                return ["events.name.e1"]
+
+            def delete(self, code: str) -> None:
+                deleted.append(code)
+
+        result = cleanup_orphans(DeletableStore(), "events", valid_ids={"e1"})
+        assert result == []
+        assert deleted == []
+
+    def test_store_without_delete_returns_empty(self) -> None:
+        class KeyOnlyStore:
+            def get(self, code: str, source_locale: str, target_locale: str) -> str | None:
+                return None
+
+            def save(self, unit: Any) -> None:
+                pass
+
+            def get_pending(self, target_locales: list[str]) -> list[Any]:
+                return []
+
+            def get_failed(self) -> list[Any]:
+                return []
+
+            def keys(self) -> list[str]:
+                return ["events.name.e1", "events.name.e2"]
+
+        result = cleanup_orphans(KeyOnlyStore(), "events", valid_ids={"e1"})
         assert result == []

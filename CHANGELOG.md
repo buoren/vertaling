@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-03-17
+
+### Added
+- **Pipeline glossary support**: `TranslationPipeline` accepts `glossary` and `glossary_scopes` parameters; attaches terms to units before translation and enforces them via post-processing
+- `glossary_terms` field on `TranslationUnit` so translators can use glossary terms natively
+- `cleanup_orphans()` utility: finds and deletes orphaned translations in one call (requires store with `keys()` and `delete()`)
+- `delete()` method on `SQLAlchemyStore`
+- `detect_language()` async method on `GoogleTranslator` for language detection via Google Cloud Translation v3
+
 ## [1.2.1] - 2026-03-15
 
 ### Added

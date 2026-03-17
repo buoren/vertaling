@@ -30,11 +30,12 @@ from vertaling.utilities.codes import make_translation_code
 from vertaling.utilities.completeness import CompletenessReport, check_completeness
 from vertaling.utilities.interpolation import interpolate
 from vertaling.utilities.locale import normalize_for_api, resolve_locale
-from vertaling.utilities.scanner import ContentScanner, ScanResult, ScanTarget
+from vertaling.utilities.scanner import ContentScanner, ScanResult, ScanTarget, cleanup_orphans
 
 __all__ = [
     "CompletenessReport",
     "ContentScanner",
+    "cleanup_orphans",
     "Glossary",
     "InMemoryGlossary",
     "ScanResult",
@@ -52,4 +53,4 @@ __all__ = [
     "resolve_locale",
 ]
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"

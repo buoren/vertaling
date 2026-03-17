@@ -6,6 +6,7 @@ import pytest
 
 from vertaling._core.config import TranslationConfig
 from vertaling._core.models import TranslationStatus, TranslationUnit
+from vertaling.glossaries.memory import InMemoryGlossary
 from vertaling.pipeline import TranslationPipeline
 from vertaling.stores.memory import InMemoryTranslationStore
 from vertaling.translators.echo import EchoTranslator
@@ -394,3 +395,184 @@ async def test_retry_failed_retranslates_across_all_stores(
     assert stats.total_units == 1
     assert stats.complete == 1
     assert writable.get("k1", "en", "nl") == "Retry"
+
+
+# --- Glossary integration ---
+
+
+class FakeTranslator:
+    """Translator that uppercases source text, simulating a real translator."""
+
+    async def translate_batch(self, units):
+        for u in units:
+            u.translated_text = u.source_text.upper()
+            u.status = TranslationStatus.COMPLETE
+        return units
+
+    def max_batch_chars(self):
+        return 1_000_000
+
+    def supported_locales(self):
+        return set()
+
+
+@pytest.mark.asyncio
+async def test_glossary_enforces_terms_on_get():
+    """get() applies glossary post-processing to translated text."""
+    glossary = InMemoryGlossary()
+    glossary.add_term("BIRD", "vogel", "en", "nl")
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=FakeTranslator(),
+        config=config,
+        store=store,
+        glossary=glossary,
+    )
+
+    result = await pipe.get("app.title", "The bird flies", target_locale="nl")
+    # FakeTranslator uppercases → "THE BIRD FLIES"
+    # Glossary enforces BIRD → vogel (case-insensitive)
+    assert result == "THE vogel FLIES"
+
+
+@pytest.mark.asyncio
+async def test_glossary_enforces_terms_on_translate_batch():
+    """translate_batch() applies glossary post-processing."""
+    glossary = InMemoryGlossary()
+    glossary.add_term("HELLO", "hallo", "en", "nl")
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=FakeTranslator(),
+        config=config,
+        store=store,
+        glossary=glossary,
+    )
+
+    units = [
+        TranslationUnit(
+            code="k1", source_locale="en", target_locale="nl", source_text="Hello world"
+        ),
+    ]
+    results = await pipe.translate_batch(units)
+    assert results[0].translated_text == "hallo WORLD"
+
+
+@pytest.mark.asyncio
+async def test_glossary_enforces_terms_on_run():
+    """run() applies glossary post-processing."""
+    glossary = InMemoryGlossary()
+    glossary.add_term("MORNING", "ochtend", "en", "nl")
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    store.save(
+        TranslationUnit(
+            code="k1",
+            source_locale="en",
+            target_locale="nl",
+            source_text="Good morning",
+        )
+    )
+
+    pipe = TranslationPipeline(
+        backend=FakeTranslator(),
+        config=config,
+        store=store,
+        glossary=glossary,
+    )
+
+    stats = await pipe.run(target_locales=["nl"])
+    assert stats.complete == 1
+    assert store.get("k1", "en", "nl") == "GOOD ochtend"
+
+
+@pytest.mark.asyncio
+async def test_glossary_with_scopes():
+    """Glossary scopes are passed through correctly."""
+    glossary = InMemoryGlossary()
+    glossary.add_term("BIRD", "vogel", "en", "nl", scope="global")
+    glossary.add_term("BIRD", "snoekje", "en", "nl", scope="project")
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=FakeTranslator(),
+        config=config,
+        store=store,
+        glossary=glossary,
+        glossary_scopes=["global", "project"],
+    )
+
+    result = await pipe.get("app.title", "The bird", target_locale="nl")
+    # "project" scope overrides "global" → BIRD → snoekje
+    assert result == "THE snoekje"
+
+
+@pytest.mark.asyncio
+async def test_glossary_attaches_terms_to_units():
+    """Units get glossary_terms populated before translation."""
+    glossary = InMemoryGlossary()
+    glossary.add_term("bird", "vogel", "en", "nl")
+
+    captured_terms = []
+
+    class CapturingTranslator:
+        async def translate_batch(self, units):
+            for u in units:
+                captured_terms.append(u.glossary_terms)
+                u.translated_text = u.source_text
+                u.status = TranslationStatus.COMPLETE
+            return units
+
+        def max_batch_chars(self):
+            return 1_000_000
+
+        def supported_locales(self):
+            return set()
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=CapturingTranslator(),
+        config=config,
+        store=store,
+        glossary=glossary,
+    )
+
+    await pipe.get("k1", "A bird", target_locale="nl")
+    assert captured_terms == [{"bird": "vogel"}]
+
+
+@pytest.mark.asyncio
+async def test_no_glossary_leaves_terms_none():
+    """Without a glossary, glossary_terms stays None."""
+    captured_terms = []
+
+    class CapturingTranslator:
+        async def translate_batch(self, units):
+            for u in units:
+                captured_terms.append(u.glossary_terms)
+                u.translated_text = u.source_text
+                u.status = TranslationStatus.COMPLETE
+            return units
+
+        def max_batch_chars(self):
+            return 1_000_000
+
+        def supported_locales(self):
+            return set()
+
+    config = TranslationConfig(source_locale="en", target_locales=["nl"])
+    store = InMemoryTranslationStore()
+    pipe = TranslationPipeline(
+        backend=CapturingTranslator(),
+        config=config,
+        store=store,
+    )
+
+    await pipe.get("k1", "Hello", target_locale="nl")
+    assert captured_terms == [None]

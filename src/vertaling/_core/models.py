@@ -50,3 +50,10 @@ class TranslationUnit:
 
     store: str | None = None
     """Name of the store this unit belongs to (set by pipeline, not by user)."""
+
+    glossary_terms: dict[str, str] | None = None
+    """Glossary {source_term: target_term} pairs for this unit's language pair.
+
+    Populated by the pipeline from a ``Glossary`` before translation.
+    Translators may use these natively (e.g. as LLM instructions) or
+    ignore them — the pipeline enforces terms via post-processing."""

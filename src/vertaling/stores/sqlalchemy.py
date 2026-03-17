@@ -156,6 +156,14 @@ class SQLAlchemyStore:
             rows = session.execute(stmt).fetchall()
             return [self._row_to_unit(row) for row in rows]
 
+    def delete(self, code: str) -> None:
+        """Delete all translations for a given code (all locales)."""
+        t = self._table
+
+        with self._session_factory() as session:
+            session.execute(t.delete().where(t.c.code == code))
+            session.commit()
+
     def get_failed(self) -> list[TranslationUnit]:
         """Return all failed units."""
         t = self._table

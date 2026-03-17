@@ -155,6 +155,31 @@ class ContentScanner:
                     )
 
 
+def cleanup_orphans(store: TranslationStore, table: str, valid_ids: set[str]) -> list[str]:
+    """Find and delete translations referencing deleted records.
+
+    Requires the store to support both ``keys()`` and ``delete(code)`` methods.
+    If either is missing, returns an empty list without error.
+
+    Args:
+        store: Translation store (must support ``keys()`` and ``delete()``).
+        table: Table name prefix to filter codes by.
+        valid_ids: Set of IDs that still exist in the database.
+
+    Returns:
+        List of orphaned translation codes that were deleted.
+    """
+    delete_fn = getattr(store, "delete", None)
+    if delete_fn is None:
+        return []
+
+    orphans = find_orphans(store, table, valid_ids)
+    for code in orphans:
+        delete_fn(code)
+
+    return orphans
+
+
 def find_orphans(store: TranslationStore, table: str, valid_ids: set[str]) -> list[str]:
     """Find translation codes referencing deleted records.
 
