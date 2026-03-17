@@ -192,7 +192,7 @@ def test_detect_language_sync_calls_api(translator):
     translator._client.detect_language.return_value = mock_response
 
     with mock.patch("vertaling.translators.google.DetectLanguageRequest", create=True) as MockReq:
-        from vertaling.translators.google import GoogleTranslator as _GT
+        from vertaling.translators.google import GoogleTranslator as _GT  # noqa: F401
 
         # Patch the import inside the method
         with mock.patch.dict(
