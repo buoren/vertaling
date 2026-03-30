@@ -96,7 +96,7 @@ class ContentScanner:
         result: ScanResult,
     ) -> None:
         source_value = _get_value(record, field_name)
-        if not isinstance(source_value, str):
+        if not isinstance(source_value, str) or not source_value.strip():
             return
 
         code = make_translation_code(target.table, field_name, record_id)
@@ -132,7 +132,7 @@ class ContentScanner:
         resolved = resolve_wildcard_paths(json_data, pattern)
 
         for concrete_path, source_value in resolved:
-            if not isinstance(source_value, str):
+            if not isinstance(source_value, str) or not source_value.strip():
                 continue
 
             code = make_translation_code(

@@ -82,8 +82,19 @@ class GoogleTranslator:
         loop = asyncio.get_running_loop()
 
         for target_locale, locale_units in by_locale.items():
-            texts = [u.source_text for u in locale_units]
-            source_locale = locale_units[0].source_locale
+            # Filter out units with empty source text — Google API rejects them
+            # and one bad entry would fail the entire locale batch.
+            valid_units = [u for u in locale_units if u.source_text and u.source_text.strip()]
+            skipped_units = [u for u in locale_units if u not in valid_units]
+            for unit in skipped_units:
+                unit.status = TranslationStatus.FAILED
+                unit.error = "Empty source text"
+
+            if not valid_units:
+                continue
+
+            texts = [u.source_text for u in valid_units]
+            source_locale = valid_units[0].source_locale
 
             google_target = normalize_for_api(target_locale)
             google_source = normalize_for_api(source_locale)
@@ -97,12 +108,12 @@ class GoogleTranslator:
                     google_source,
                     self._glossary_resource_name,
                 )
-                for unit, translated in zip(locale_units, translated_texts, strict=True):
+                for unit, translated in zip(valid_units, translated_texts, strict=True):
                     unit.translated_text = translated
                     unit.status = TranslationStatus.COMPLETE
             except Exception as exc:
                 logger.warning("Google Translate failed for %s: %s", target_locale, exc)
-                for unit in locale_units:
+                for unit in valid_units:
                     unit.status = TranslationStatus.FAILED
                     unit.error = str(exc)
 
